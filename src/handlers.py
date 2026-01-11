@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 
 from config import CHATGPT_TOKEN
 from gpt import ChatGPTService
-from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons)
+from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons, dislike_finish_button)
 
 chatgpt_service = ChatGPTService(CHATGPT_TOKEN)
 
@@ -28,6 +28,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'random': 'Дізнатися випадковий факт',
             'gpt': 'Запитати ChatGPT',
             'talk': 'Діалог з відомою особистістю',
+            'recommendation': 'Рекомендації від ChatGPT',
         }
     )
 
@@ -113,6 +114,33 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=update.effective_chat.id,
                 message_id=waiting_message.message_id
             )
+
+    if conversation_state == "recommendation":
+        message_description = update.message.text
+        selected_item = context.user_data.get("selected_items")
+
+        if not selected_item:
+            await send_text(update, context, "Спочатку оберіть категорію")
+            return
+
+        try:
+            prompt = load_prompt(selected_item)
+            prompt_write = prompt.format(genre=message_description)
+            context.user_data["recommendation_prompt"] = prompt_write
+            chatgpt_service.set_prompt(prompt_write)
+            waiting_message = await send_text(update, context, "Чекайте йде підбір...")
+            response = await chatgpt_service.add_message(message_description)
+            await send_text(update, context, response, reply_markup=dislike_finish_button())
+        except Exception as e:
+            logger.error(f"Помилка при отриманні відповіді від ChatGPT: {e}")
+            await send_text(update, context, "Виникла помилка при обробці вашого повідомлення.")
+        finally:
+            if "waiting_message" in locals():
+                await context.bot.delete_message(
+                    chat_id=update.effective_chat.id,
+                    message_id=waiting_message.message_id
+                )
+
     if not conversation_state:
         intent_recognized = await inter_random_input(update, context, message_text)
         if not intent_recognized:
@@ -211,3 +239,61 @@ async def show_funny_response(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     full_message = f"{random_response}\n{available_commands}"
     await update.message.reply_text(full_message)
+
+
+async def recommendation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_image(update, context, "recommendation")
+    items = {
+        'recommendation_movies': "фільм",
+        'recommendation_books': "книгу",
+        'recommendation_musics': "музику",
+        'start': "Закінчити",
+    }
+    await send_text_buttons(update, context, "Що порекомендувати?", items)
+
+
+async def recommendation_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "start":
+        await start(update, context)
+        return
+
+    if data.startswith("recommendation_"):
+        context.user_data["selected_items"] = data
+        context.user_data["conversation_state"] = "recommendation"
+        prompt = load_prompt(data)
+        chatgpt_service.set_prompt(prompt)
+        recommendation_name = data.replace("recommendation_", "").replace("_", " ").title()
+        buttons = {'start': "Закінчити"}
+        await send_text_buttons(
+            update,
+            context,
+            f"Я оберу для тебе"
+            f" {recommendation_name} напиши жанр:",
+            buttons
+        )
+
+
+async def feedback_button(update, context):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "start":
+        context.user_data.clear()
+        await show_start(query.message, context)
+        return
+
+    elif data == "dislike":
+        prompt = context.user_data.get("recommendation_prompt")
+        if not prompt:
+            await query.message.reply_text("Дані відсутні")
+            return
+
+        chatgpt_service.set_prompt(prompt)
+        response = await chatgpt_service.add_message("Підкажи інший варіант")
+        await query.message.reply_text(response, reply_markup=dislike_finish_button())
+

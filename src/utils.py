@@ -12,12 +12,13 @@ def load_message(name: str) -> str:
         return file.read()
 
 
-async def send_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+async def send_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None):
     text = text.encode('utf8').decode('utf8')
     return await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=text,
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup =reply_markup
     )
 
 
@@ -66,3 +67,13 @@ async def send_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         reply_markup=reply_markup,
         message_thread_id=update.effective_message.message_thread_id
     )
+
+
+def dislike_finish_button():
+    buttons = {
+        "dislike": "Не подобається",
+        "start":  "Закінчити"
+    }
+    keyboard_row = [InlineKeyboardButton(label, callback_data=key) for key, label in buttons.items()]
+    keyboard = [keyboard_row]
+    return InlineKeyboardMarkup(keyboard)
