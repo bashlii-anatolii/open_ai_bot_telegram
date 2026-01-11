@@ -296,4 +296,3 @@ async def feedback_button(update, context):
         chatgpt_service.set_prompt(prompt)
         response = await chatgpt_service.add_message("Підкажи інший варіант")
         await query.message.reply_text(response, reply_markup=dislike_finish_button())
-
