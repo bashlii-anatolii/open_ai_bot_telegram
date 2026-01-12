@@ -6,7 +6,8 @@ from telegram.ext import ContextTypes
 
 from config import CHATGPT_TOKEN
 from gpt import ChatGPTService
-from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons, dislike_finish_button)
+from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons,
+                   dislike_finish_button)
 
 chatgpt_service = ChatGPTService(CHATGPT_TOKEN)
 
@@ -29,6 +30,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'gpt': 'Запитати ChatGPT',
             'talk': 'Діалог з відомою особистістю',
             'recommendation': 'Рекомендації від ChatGPT',
+            'resume': 'Допомога з резюме',
         }
     )
 
@@ -91,6 +93,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=update.effective_chat.id,
                 message_id=waiting_message.message_id
             )
+
     if conversation_state == "talk":
         personality = context.user_data.get("selected_personality")
         if personality:
@@ -140,6 +143,56 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=update.effective_chat.id,
                     message_id=waiting_message.message_id
                 )
+
+    if conversation_state == "resume":
+        step = context.user_data.get("resume_step")
+        resume_data = context.user_data.get("resume_data", {})
+        if step == "education":
+            resume_data["education"] = message_text
+            context.user_data["resume_step"] = "experience"
+            context.user_data["resume_data"] = resume_data
+            await send_text(
+                update,
+                context,
+                "Опишіть свій досвід роботи:"
+            )
+            return
+        if step == "experience":
+            resume_data["experience"] = message_text
+            context.user_data["resume_step"] = "skills"
+            context.user_data["resume_data"] = resume_data
+            await send_text(
+                update,
+                context,
+                "Опишіть свої навички:"
+            )
+            return
+        if step == "skills":
+            resume_data["skills"] = message_text
+            context.user_data["resume_data"] = resume_data
+            prompt = load_prompt("resume")
+            chatgpt_service.set_prompt(prompt)
+            user_info = (
+                f"Освіта:\n{resume_data['education']}\n\n"
+                f"Досвід роботи:\n{resume_data['experience']}\n\n"
+                f"Навички:\n{resume_data['skills']}"
+            )
+            waiting = await send_text(update, context, "Формую резюме...")
+            result = await chatgpt_service.add_message(user_info)
+            buttons = {
+                "start": "Закінчити"
+            }
+            await send_text_buttons(update,
+                                    context,
+                                    result,
+                                    buttons
+            )
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=waiting.message_id
+            )
+            context.user_data.clear()
+            return
 
     if not conversation_state:
         intent_recognized = await inter_random_input(update, context, message_text)
@@ -296,3 +349,28 @@ async def feedback_button(update, context):
         chatgpt_service.set_prompt(prompt)
         response = await chatgpt_service.add_message("Підкажи інший варіант")
         await query.message.reply_text(response, reply_markup=dislike_finish_button())
+
+
+async def resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_image(update, context, "resume")
+    context.user_data.clear()
+    context.user_data["conversation_state"] = "resume"
+    context.user_data["resume_step"] = "education"
+    context.user_data["resume_data"] = {}
+
+    await send_text(
+        update,
+        context,
+        "Створимо резюме.\n"
+        "Напиши свою освіту:"
+    )
+
+
+async def resume_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "start":
+        context.user_data.clear()
+        await start(update, context)
