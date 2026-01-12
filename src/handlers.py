@@ -6,8 +6,7 @@ from telegram.ext import ContextTypes
 
 from config import CHATGPT_TOKEN
 from gpt import ChatGPTService
-from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons,
-                   dislike_finish_button)
+from utils import (send_image, send_text, load_message, show_main_menu, load_prompt, send_text_buttons)
 
 chatgpt_service = ChatGPTService(CHATGPT_TOKEN)
 
@@ -131,18 +130,17 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt_write = prompt.format(genre=message_description)
             context.user_data["recommendation_prompt"] = prompt_write
             chatgpt_service.set_prompt(prompt_write)
+
             waiting_message = await send_text(update, context, "Чекайте йде підбір...")
             response = await chatgpt_service.add_message(message_description)
-            await send_text(update, context, response, reply_markup=dislike_finish_button())
-        except Exception as e:
-            logger.error(f"Помилка при отриманні відповіді від ChatGPT: {e}")
-            await send_text(update, context, "Виникла помилка при обробці вашого повідомлення.")
+
+            await feedback(update, context, response)
+
         finally:
-            if "waiting_message" in locals():
-                await context.bot.delete_message(
-                    chat_id=update.effective_chat.id,
-                    message_id=waiting_message.message_id
-                )
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=waiting_message.message_id
+            )
 
     if conversation_state == "resume":
         step = context.user_data.get("resume_step")
@@ -182,10 +180,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             buttons = {
                 "start": "Закінчити"
             }
-            await send_text_buttons(update,
-                                    context,
-                                    result,
-                                    buttons
+            await send_text_buttons(
+                update,
+                context,
+                result,
+                buttons
             )
             await context.bot.delete_message(
                 chat_id=update.effective_chat.id,
@@ -330,25 +329,34 @@ async def recommendation_button(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
 
-async def feedback_button(update, context):
+async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    buttons = {
+        "dislike": "Не подобається",
+        "start": "Закінчити"
+    }
+    await send_text_buttons(update, context, text, buttons)
+
+
+async def feedback_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
     if data == "start":
         context.user_data.clear()
-        await show_start(query.message, context)
+        await start(update, context)
         return
 
-    elif data == "dislike":
+    if data == "dislike":
         prompt = context.user_data.get("recommendation_prompt")
         if not prompt:
-            await query.message.reply_text("Дані відсутні")
+            await update.reply_text("Дані відсутні")
             return
 
         chatgpt_service.set_prompt(prompt)
         response = await chatgpt_service.add_message("Підкажи інший варіант")
-        await query.message.reply_text(response, reply_markup=dislike_finish_button())
+
+        await feedback(update, context, response)
 
 
 async def resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
