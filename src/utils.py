@@ -68,12 +68,3 @@ async def send_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         message_thread_id=update.effective_message.message_thread_id
     )
 
-
-# def dislike_finish_button():
-#     buttons = {
-#         "dislike": "Не подобається",
-#         "start":  "Закінчити"
-#     }
-#     keyboard_row = [InlineKeyboardButton(label, callback_data=key) for key, label in buttons.items()]
-#     keyboard = [keyboard_row]
-#     return InlineKeyboardMarkup(keyboard)
